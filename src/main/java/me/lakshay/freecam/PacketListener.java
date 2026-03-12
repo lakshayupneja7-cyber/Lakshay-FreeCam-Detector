@@ -6,6 +6,7 @@ import com.comphenix.protocol.ProtocolManager;
 import com.comphenix.protocol.events.ListenerPriority;
 import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketEvent;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
@@ -19,8 +20,8 @@ public class PacketListener {
     private final Plugin plugin;
     private final ProtocolManager manager;
 
-    // avoid repeating same logs too much
     private final Set<String> seenLogs = new HashSet<>();
+    private final Set<UUID> kickQueued = new HashSet<>();
 
     public PacketListener(Plugin plugin) {
         this.plugin = plugin;
@@ -29,7 +30,6 @@ public class PacketListener {
 
     public void register() {
 
-        // PLAY phase payloads
         manager.addPacketListener(new PacketAdapter(
                 plugin,
                 ListenerPriority.NORMAL,
@@ -41,7 +41,6 @@ public class PacketListener {
             }
         });
 
-        // CONFIG phase payloads
         manager.addPacketListener(new PacketAdapter(
                 plugin,
                 ListenerPriority.NORMAL,
@@ -66,27 +65,20 @@ public class PacketListener {
             byte[] rawData = readPayloadBytes(event);
             String dataPreview = buildDataPreview(rawData);
 
-            logOnce(
-                    player.getUniqueId(),
-                    player.getName(),
-                    phase,
-                    channel,
-                    dataPreview
-            );
+            logOnce(player.getUniqueId(), player.getName(), phase, channel, dataPreview);
 
             String lowerChannel = channel.toLowerCase();
 
-            // already confirmed from your logs
+            // This one is clearly detectable from your logs
             if (lowerChannel.contains("autototem-fabric")) {
-                player.kickPlayer("Please remove AutoTotem and rejoin.");
+                queueKick(player, "Please remove AutoTotem and rejoin.");
                 return;
             }
 
-            // inspect common interesting channels more deeply
             if (lowerChannel.contains("minecraft:brand")) {
                 String brand = tryReadUtf8(rawData);
                 if (!brand.isBlank()) {
-                    plugin.getLogger().info("[Brand] " + player.getName() + " -> " + brand);
+                    plugin.getLogger().info("[Brand] " + player.getName() + " -> " + sanitize(brand));
                 }
             }
 
@@ -107,6 +99,24 @@ public class PacketListener {
         } catch (Exception ex) {
             plugin.getLogger().warning("Failed to inspect " + phase + " custom payload: " + ex.getMessage());
         }
+    }
+
+    private void queueKick(Player player, String message) {
+        UUID uuid = player.getUniqueId();
+
+        if (!kickQueued.add(uuid)) {
+            return;
+        }
+
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            try {
+                if (player.isOnline()) {
+                    player.kickPlayer(message);
+                }
+            } finally {
+                kickQueued.remove(uuid);
+            }
+        });
     }
 
     private void logOnce(UUID uuid, String playerName, String phase, String channel, String dataPreview) {
@@ -146,7 +156,6 @@ public class PacketListener {
     }
 
     private byte[] readPayloadBytes(PacketEvent event) {
-        // Try byte arrays directly
         try {
             if (!event.getPacket().getByteArrays().getValues().isEmpty()) {
                 byte[] data = event.getPacket().getByteArrays().read(0);
@@ -157,7 +166,6 @@ public class PacketListener {
         } catch (Exception ignored) {
         }
 
-        // Fallback: try packet modifier values and stringify if needed
         try {
             for (Object value : event.getPacket().getModifier().getValues()) {
                 if (value instanceof byte[]) {
@@ -189,20 +197,17 @@ public class PacketListener {
         }
 
         String s = new String(data, StandardCharsets.UTF_8);
-
-        // strip obvious nulls / junk for logging
         s = s.replace('\u0000', ' ').trim();
 
-        // if mostly unreadable, ignore
+        if (s.isEmpty()) {
+            return "";
+        }
+
         int printable = 0;
         for (char c : s.toCharArray()) {
             if (c >= 32 && c < 127) {
                 printable++;
             }
-        }
-
-        if (s.isEmpty()) {
-            return "";
         }
 
         double ratio = (double) printable / (double) s.length();
