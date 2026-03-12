@@ -1,7 +1,7 @@
 name: LakshayFreeCamDetector
-version: 1.0
+version: 2.0
 main: me.lakshay.freecam.FreeCamDetector
 api-version: 1.20
 author: Lakshay
 depend: [ProtocolLib]
-description: Detects suspicious FreeCam packet channels
+description: Logs client payload channels and detects suspicious channels
