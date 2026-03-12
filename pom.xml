@@ -39,10 +39,10 @@
 </dependency>
 
 <dependency>
-<groupId>com.comphenix.protocol</groupId>
-<artifactId>ProtocolLib</artifactId>
-<version>5.2.0</version>
-<scope>provided</scope>
+    <groupId>com.comphenix.protocol</groupId>
+    <artifactId>ProtocolLib</artifactId>
+    <version>5.1.0</version>
+    <scope>provided</scope>
 </dependency>
 
 </dependencies>
